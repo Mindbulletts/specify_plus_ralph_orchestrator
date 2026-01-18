@@ -2,6 +2,27 @@
 
 This document provides detailed transformation rules for converting specification documents (PRD, SDD, PLAN) to Ralph's expected format.
 
+## Architecture Decisions
+
+| ADR | Decision | Rationale | Trade-offs |
+|-----|----------|-----------|------------|
+| ADR-1 | Python script for transformation | Follows spec.py pattern; handles regex/file I/O cleanly; deterministic | Requires Python (already needed for existing skills) |
+| ADR-2 | Export to project root | Simplest Ralph integration; Ralph expects files in root | May conflict with existing files; requires overwrite prompt |
+| ADR-3 | Partial export with warnings | Enables iterative workflow; doesn't block on non-critical gaps | May produce incomplete config; relies on user reading warnings |
+| ADR-4 | Regex-based transformation | Reproducible output; faster execution; no API calls | May not handle edge cases; requires manual fallback |
+| ADR-5 | SKILL.md + Python script | Separation of concerns; skill guides, script executes | Two files to maintain; script invoked via Bash |
+
+## Constraints
+
+- **CON-1**: Must follow existing skill structure (SKILL.md, templates/, reference.md)
+- **CON-2**: Limited to Claude Code tools (Read, Write, Edit, Bash, etc.)
+- **CON-3**: No external dependencies - Python standard library only
+- **CON-4**: Cross-platform (Windows, macOS, Linux)
+- **CON-5**: Deterministic output - no AI-mediated conversion
+- **CON-6**: Partial export support with clear warnings
+
+---
+
 ## File Mappings Overview
 
 ```
