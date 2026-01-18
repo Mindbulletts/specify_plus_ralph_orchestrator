@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Ralph runtime files (generated during execution)
+.call_count
+.last_reset
+.exit_signals
+.circuit_breaker_state
+.circuit_breaker_history
+.response_analysis
+.last_output_length
+.claude_session_id
+.ralph_session
+.ralph_session_history
+.json_parse_result
+status.json
+progress.json
