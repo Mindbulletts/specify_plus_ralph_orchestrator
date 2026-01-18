@@ -638,51 +638,89 @@ def transform_fixplan(prd: Dict, plan: Dict, project_name: str) -> str:
     high_tasks = []
     medium_tasks = []
     low_tasks = []
-    notes = []
+    parallel_notes = []
+    dependency_notes = []
+    traceability_notes = []
 
     # If we have a PLAN, use its phases
     if plan and plan.get('phases'):
         phases = plan['phases']
 
+        # Track tasks with PRD refs for traceability
+        prd_refs = {}
+
         # Phase 1 -> High
         if '1' in phases:
+            phase_name = phases['1'].get('name', 'Phase 1')
+            dependency_notes.append(f"- **Phase 1 ({phase_name})**: Must complete before Phase 2")
             for task in phases['1'].get('tasks', []):
                 high_tasks.append(flatten_plan_task(task))
                 if task.get('parallel'):
-                    notes.append(f"- {task.get('id')} can run in parallel")
+                    parallel_notes.append(f"- {task.get('id')} can run in parallel with other parallel tasks")
+                if task.get('prd_ref'):
+                    ref = task.get('prd_ref')
+                    if ref not in prd_refs:
+                        prd_refs[ref] = []
+                    prd_refs[ref].append(task.get('id'))
 
         # Phase 2 -> Medium
         if '2' in phases:
+            phase_name = phases['2'].get('name', 'Phase 2')
+            dependency_notes.append(f"- **Phase 2 ({phase_name})**: Depends on Phase 1 completion")
             for task in phases['2'].get('tasks', []):
                 medium_tasks.append(flatten_plan_task(task))
                 if task.get('parallel'):
-                    notes.append(f"- {task.get('id')} can run in parallel")
+                    parallel_notes.append(f"- {task.get('id')} can run in parallel with other parallel tasks")
+                if task.get('prd_ref'):
+                    ref = task.get('prd_ref')
+                    if ref not in prd_refs:
+                        prd_refs[ref] = []
+                    prd_refs[ref].append(task.get('id'))
 
         # Phase 3+ -> Low
         for phase_num in sorted(phases.keys()):
             if int(phase_num) >= 3:
+                phase_name = phases[phase_num].get('name', f'Phase {phase_num}')
+                dependency_notes.append(f"- **Phase {phase_num} ({phase_name})**: Lower priority, implement after core features")
                 for task in phases[phase_num].get('tasks', []):
                     low_tasks.append(flatten_plan_task(task))
+                    if task.get('prd_ref'):
+                        ref = task.get('prd_ref')
+                        if ref not in prd_refs:
+                            prd_refs[ref] = []
+                        prd_refs[ref].append(task.get('id'))
+
+        # Build traceability notes
+        for ref, task_ids in prd_refs.items():
+            traceability_notes.append(f"- {ref} → {', '.join(task_ids)}")
 
     # Fallback to PRD features if no PLAN
     else:
         # Must-Have -> High
         for i, feature in enumerate(prd.get('must_have', []), 1):
             high_tasks.append(f"- [ ] F{i}: {feature.get('name', 'Feature')}")
+            traceability_notes.append(f"- F{i} implements Must-Have feature: {feature.get('name', 'Feature')}")
 
         # Should-Have -> Medium
         for i, feature in enumerate(prd.get('should_have', []), 1):
             medium_tasks.append(f"- [ ] S{i}: {feature.get('name', 'Feature')}")
+            traceability_notes.append(f"- S{i} implements Should-Have feature: {feature.get('name', 'Feature')}")
 
         # Could-Have -> Low
         for i, feature in enumerate(prd.get('could_have', []), 1):
             low_tasks.append(f"- [ ] C{i}: {feature.get('name', 'Feature')}")
 
+        dependency_notes.append("- Complete High priority (Must-Have) before Medium priority")
+        dependency_notes.append("- Medium priority (Should-Have) before Low priority (Could-Have)")
+
     # Format task lists
     high_str = '\n'.join(high_tasks) if high_tasks else "- [ ] No high priority tasks defined"
     medium_str = '\n'.join(medium_tasks) if medium_tasks else "- [ ] No medium priority tasks defined"
     low_str = '\n'.join(low_tasks) if low_tasks else "- [ ] No low priority tasks defined"
-    notes_str = '\n'.join(notes) if notes else "No additional notes"
+
+    parallel_str = '\n'.join(parallel_notes) if parallel_notes else "- No parallel tasks identified"
+    dependency_str = '\n'.join(dependency_notes) if dependency_notes else "- Execute tasks in order listed"
+    traceability_str = '\n'.join(traceability_notes) if traceability_notes else "- All tasks trace to PRD requirements"
 
     # Replace template placeholders
     result = template.replace('{project_name}', project_name)
@@ -690,7 +728,11 @@ def transform_fixplan(prd: Dict, plan: Dict, project_name: str) -> str:
     result = result.replace('{medium_priority_tasks}', medium_str)
     result = result.replace('{low_priority_tasks}', low_str)
     result = result.replace('{completed_tasks}', "- [x] Project initialization")
-    result = result.replace('{notes}', notes_str)
+    result = result.replace('{parallel_notes}', parallel_str)
+    result = result.replace('{dependency_notes}', dependency_str)
+    result = result.replace('{traceability_notes}', traceability_str)
+    # Legacy support for old template format
+    result = result.replace('{notes}', dependency_str)
 
     return result
 
@@ -796,6 +838,75 @@ def transform_ears_to_gherkin(ears_criterion: str) -> str:
     return f"# TODO: Convert manually\n# Original: {criterion}"
 
 
+def generate_requirements_md(prd: Dict, sdd: Dict) -> str:
+    """
+    Generate consolidated specs/requirements.md for Ralph context loading.
+
+    This provides a single file with all requirements, matching Ralph-import output.
+    """
+    lines = [
+        "# Project Requirements",
+        "",
+        "This file consolidates all requirements for quick Ralph context loading.",
+        "",
+    ]
+
+    # Vision and problem
+    if prd.get('vision'):
+        lines.extend(["## Vision", "", prd['vision'], ""])
+
+    if prd.get('problem_statement'):
+        lines.extend(["## Problem Statement", "", prd['problem_statement'], ""])
+
+    if prd.get('value_proposition'):
+        lines.extend(["## Value Proposition", "", prd['value_proposition'], ""])
+
+    # Must-Have requirements
+    must_have = prd.get('must_have', [])
+    if must_have:
+        lines.extend(["## Must-Have Requirements", ""])
+        for i, feature in enumerate(must_have, 1):
+            lines.append(f"### {i}. {feature.get('name', 'Feature')}")
+            lines.append("")
+            if feature.get('user_story'):
+                lines.append(f"**User Story:** {feature['user_story']}")
+                lines.append("")
+            if feature.get('criteria'):
+                lines.append("**Acceptance Criteria:**")
+                for criterion in feature['criteria']:
+                    lines.append(f"- {criterion}")
+                lines.append("")
+
+    # Should-Have requirements
+    should_have = prd.get('should_have', [])
+    if should_have:
+        lines.extend(["## Should-Have Requirements", ""])
+        for i, feature in enumerate(should_have, 1):
+            lines.append(f"### {i}. {feature.get('name', 'Feature')}")
+            lines.append("")
+            if feature.get('user_story'):
+                lines.append(f"**User Story:** {feature['user_story']}")
+                lines.append("")
+
+    # Could-Have requirements
+    could_have = prd.get('could_have', [])
+    if could_have:
+        lines.extend(["## Could-Have Requirements", ""])
+        for i, feature in enumerate(could_have, 1):
+            lines.append(f"### {i}. {feature.get('name', 'Feature')}")
+            lines.append("")
+
+    # Constraints from SDD
+    if sdd.get('constraints'):
+        lines.extend(["## Technical Constraints", "", sdd['constraints'], ""])
+
+    # Quality requirements
+    if sdd.get('quality_requirements'):
+        lines.extend(["## Quality Requirements", "", sdd['quality_requirements'], ""])
+
+    return '\n'.join(lines)
+
+
 def transform_specs(prd: Dict, sdd: Dict, output_dir: Path) -> Dict[str, str]:
     """
     Transform PRD and SDD into specs/ directory files.
@@ -803,6 +914,9 @@ def transform_specs(prd: Dict, sdd: Dict, output_dir: Path) -> Dict[str, str]:
     Returns dict of {relative_path: content}
     """
     specs = {}
+
+    # Create consolidated requirements.md (matches Ralph-import output)
+    specs["specs/requirements.md"] = generate_requirements_md(prd, sdd)
 
     # Create feature files from PRD
     all_features = (
