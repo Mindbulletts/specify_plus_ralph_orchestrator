@@ -9,43 +9,49 @@ Developers using Claude Code face two disconnected workflows:
 1. **Specification Creation**: Using `/start:specify` to create structured PRD, SDD, and PLAN documents
 2. **Autonomous Execution**: Using Ralph to run iterative Claude Code sessions
 
-Ralph expects specific file formats (`PROMPT.md`, `@fix_plan.md`, `@AGENT.md`, `specs/`) that don't match the specification output (`product-requirements.md`, `solution-design.md`, `implementation-plan.md`). This forces manual translation, loses traceability, and risks specification drift.
+The specification output (`docs/specs/NNN-*/`) needs to be prepared for Ralph execution, including updating the project's task list and focus area.
 
 ## Solution
 
-The `export-to-ralph` skill automatically transforms completed specifications into Ralph's format:
+The `export-to-ralph` skill prepares completed specifications for Ralph execution:
 
-| Specification Input | Ralph Output |
-|---------------------|--------------|
-| product-requirements.md | PROMPT.md, specs/features/, specs/requirements.md |
-| solution-design.md | @AGENT.md |
-| implementation-plan.md | @fix_plan.md |
+| Action | Details |
+|--------|---------|
+| **Copy specs** | PRD/SDD/PLAN -> `specs/new-features/` |
+| **Create @fix_plan.md** | Transform PLAN phases to prioritized task list |
+| **Update PROMPT.md** | Update "Current Focus" line with new feature |
+| **Cleanup** | Delete source `docs/specs/NNN-*/` after conversion |
+
+**Note:** This skill assumes an existing Ralph project structure (PROMPT.md, @AGENT.md, specs/). It does not create these files from scratch.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Claude Code                          │
-│  ┌─────────────────┐    ┌─────────────────────────┐    │
-│  │ /start:specify  │───▶│ /start:export-to-ralph  │    │
-│  │ (the-startup)   │    │ (this skill)            │    │
-│  └─────────────────┘    └───────────┬─────────────┘    │
-│         │                           │                   │
-│         ▼                           ▼                   │
-│   docs/specs/NNN-*/           ralph-export NNN          │
-│   ├── product-requirements.md       │                   │
-│   ├── solution-design.md            ▼                   │
-│   └── implementation-plan.md  PROMPT.md                 │
-│                               @fix_plan.md              │
-│                               @AGENT.md                 │
-│                               specs/                    │
-└─────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                            ┌─────────────────┐
-                            │  ralph start    │
-                            │  (CLI tool)     │
-                            └─────────────────┘
++------------------------------------------------------------+
+|                    Claude Code                              |
+|  +------------------+    +---------------------------+     |
+|  | /start:specify   |--->| /start:export-to-ralph    |     |
+|  | (the-startup)    |    | (this skill)              |     |
+|  +------------------+    +-------------+-------------+     |
+|         |                              |                    |
+|         v                              v                    |
+|   docs/specs/NNN-*/           Existing Ralph Project        |
+|   +-- product-requirements.md         |                    |
+|   +-- solution-design.md              v                    |
+|   +-- implementation-plan.md   specs/new-features/         |
+|                                +-- product-requirements.md |
+|                                +-- solution-design.md      |
+|                                +-- implementation-plan.md  |
+|                                                            |
+|                                @fix_plan.md (created)      |
+|                                PROMPT.md (updated)         |
++------------------------------------------------------------+
+                                      |
+                                      v
+                            +------------------+
+                            |  ralph start     |
+                            |  (CLI tool)      |
+                            +------------------+
 ```
 
 ## Prerequisites
@@ -64,6 +70,10 @@ Before installing this skill, ensure you have:
    cd ralph-claude-code
    ./install.sh
    ```
+4. **Existing Ralph Project Structure** - Your project must have:
+   - `PROMPT.md` - Ralph development instructions
+   - `@AGENT.md` - Build/test configuration
+   - `specs/` - Specifications directory (with `project-overview.md`, etc.)
 
 ## Installation
 
@@ -117,7 +127,7 @@ Install both Option A and Option B for maximum flexibility:
 /start:specify "Add user authentication with OAuth"
 ```
 
-Follow the guided workflow through PRD → SDD → PLAN phases.
+Follow the guided workflow through PRD -> SDD -> PLAN phases.
 
 ### 2. Export to Ralph Format
 
@@ -130,7 +140,8 @@ Follow the guided workflow through PRD → SDD → PLAN phases.
 ```bash
 ralph-export 001                    # Export spec 001
 ralph-export 001 --dry-run          # Preview without writing
-ralph-export 001 --force            # Overwrite existing files
+ralph-export 001 --force            # Overwrite existing @fix_plan.md
+ralph-export 001 --no-cleanup       # Keep source docs/specs/NNN-*/
 ralph-export 001 --output-dir ./    # Custom output directory
 ```
 
@@ -142,11 +153,11 @@ ralph start
 
 ## Features
 
-- **Automatic EARS-to-Gherkin conversion**: Acceptance criteria become test scenarios
-- **Priority mapping**: PLAN phases → High/Medium/Low priority tasks
+- **Direct spec copying**: PRD/SDD/PLAN copied to `specs/new-features/` without transformation
+- **Priority mapping**: PLAN phases -> High/Medium/Low priority tasks in @fix_plan.md
 - **Traceability preservation**: PRD references maintained in task list (`[ref: PRD/AC-X.Y]`)
-- **Consolidated requirements.md**: Single file for fast Ralph context loading
-- **Partial export support**: Missing documents produce warnings, not failures
+- **Current Focus update**: PROMPT.md line 16 updated with new feature name and vision
+- **Automatic cleanup**: Source `docs/specs/NNN-*/` deleted after successful conversion
 - **Cross-platform**: Works on Windows, macOS, and Linux
 
 ## Generated Output
@@ -154,8 +165,19 @@ ralph start
 ### @fix_plan.md Structure
 
 ```markdown
+# Feature Name Fix Plan
+
 ## High Priority
 - [ ] T1.1: Task description (file_path) [ref: PRD/AC-1.1]
+
+## Medium Priority
+- [ ] T2.1: Task description (file_path) [ref: PRD/AC-2.1]
+
+## Low Priority
+- [ ] T3.1: Task description [ref: PRD/AC-3.1]
+
+## Completed
+- [x] Project initialization
 
 ## Notes
 
@@ -167,30 +189,48 @@ ralph start
 - **Phase 2 (Integration)**: Depends on Phase 1 completion
 
 ### Traceability
-- PRD/AC-1.1 → T1.1, T1.3
-- PRD/AC-2.1 → T2.1
+- PRD/AC-1.1 -> T1.1, T1.3
+- PRD/AC-2.1 -> T2.1
 ```
 
-### PROMPT.md Includes
+### PROMPT.md Update
 
-- RALPH_STATUS block for exit detection
-- EXIT_SIGNAL guidance
-- Development and testing guidelines
+Only line 16 is modified:
+
+```markdown
+**Current Focus:** New Feature Name - Vision statement from PRD (truncated to 100 chars)...
+```
 
 ## Project Structure
 
 ```
 skills/
-└── export-to-ralph/           # The export skill
-    ├── SKILL.md               # Skill definition (for Claude Code)
-    ├── export.py              # Python export script
-    ├── reference.md           # Transformation rules & ADRs
-    └── templates/             # Output file templates
-        ├── prompt-template.md
-        ├── fixplan-template.md
-        └── agent-template.md
++-- export-to-ralph/           # The export skill
+    +-- SKILL.md               # Skill definition (for Claude Code)
+    +-- export.py              # Python export script
+    +-- reference.md           # Transformation rules & ADRs
+    +-- templates/             # Output file templates
+        +-- fixplan-template.md
 
 docs/specs/                    # Specification storage (auto-numbered)
+```
+
+## Expected Ralph Project Structure
+
+Your target project must have this structure:
+
+```
+your-project/
++-- PROMPT.md                  # PERMANENT - Ralph instructions (customized)
++-- @AGENT.md                  # PERMANENT - Build instructions (customized)
++-- @fix_plan.md               # PER-CYCLE - Task list from implementation-plan
++-- specs/
+    +-- project-overview.md    # PERMANENT - Business context, features
+    +-- technical-reference.md # PERMANENT - Tech stack, APIs, patterns
+    +-- new-features/          # PER-CYCLE - Current feature specs
+        +-- product-requirements.md
+        +-- solution-design.md
+        +-- implementation-plan.md
 ```
 
 ## Key Design Decisions
@@ -198,10 +238,11 @@ docs/specs/                    # Specification storage (auto-numbered)
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Transformation engine | Python script | Deterministic output; no AI calls needed |
-| Output location | Project root | Direct Ralph consumption |
-| Missing documents | Warn, don't block | Enables iterative workflow |
-| Criteria format | Regex-based | Reproducible; fast execution |
-| Plugin integration | Add to the-startup | Seamless `/start:*` workflow |
+| Output location | `specs/new-features/` | Matches existing project structure |
+| File creation | Copy, don't transform | Preserves full specification detail |
+| PROMPT.md update | Single line only | Preserves customized instructions |
+| Missing documents | PLAN required, SDD optional | @fix_plan.md needs PLAN phases |
+| Source cleanup | Default on | Prevents stale specs accumulating |
 
 ## Setup for Other Users/Environments
 
@@ -212,7 +253,14 @@ docs/specs/                    # Specification storage (auto-numbered)
    - the-startup plugin (via `/plugin` command)
    - Ralph Claude Code (`./install.sh`)
 
-2. **Install export-to-ralph skill:**
+2. **Set up Ralph project structure:**
+   ```bash
+   # Create required files (one-time setup)
+   touch PROMPT.md @AGENT.md
+   mkdir -p specs/new-features
+   ```
+
+3. **Install export-to-ralph skill:**
    ```bash
    # Clone this repo
    git clone https://github.com/Mindbulletts/specify_plus_ralph_orchestrator.git
@@ -222,13 +270,13 @@ docs/specs/                    # Specification storage (auto-numbered)
          ~/.claude/plugins/cache/the-startup/start/*/skills/
    ```
 
-3. **Add shell alias (optional):**
+4. **Add shell alias (optional):**
    ```bash
    echo "alias ralph-export='python ~/.claude/plugins/cache/the-startup/start/2.13.0/skills/export-to-ralph/export.py'" >> ~/.bashrc
    source ~/.bashrc
    ```
 
-4. **Verify installation:**
+5. **Verify installation:**
    ```bash
    ralph-export --help
    ```
@@ -244,52 +292,31 @@ docs/specs/                    # Specification storage (auto-numbered)
 
 When the-startup plugin updates, re-copy the `export-to-ralph` skill to the new version directory.
 
-## Long-Term Solutions
+## Workflow Summary
 
-The current installation method (copying to the-startup plugin) works but requires re-copying after plugin updates. Consider these alternatives:
-
-### Option 1: Contribute to the-startup (Recommended)
-
-Submit a pull request to [the-startup repository](https://github.com/rsmdt/the-startup) to include `export-to-ralph` as an official skill.
-
-**Pros:**
-- Permanent solution
-- Maintained with plugin updates
-- Benefits all users
-
-**Cons:**
-- Requires maintainer approval
-- May need to adapt to their standards
-
-### Option 2: Separate Plugin
-
-Publish `export-to-ralph` as a standalone Claude Code plugin.
-
-**Pros:**
-- Independent versioning
-- Full control over updates
-- Can add additional features
-
-**Cons:**
-- Two plugins to manage
-- Need to set up marketplace or distribution
-
-**To implement:**
-1. Create `.claude-plugin/plugin.json` with plugin metadata
-2. Publish to a marketplace (GitHub-based or custom)
-3. Users install via `/plugin` command
-
-### Option 3: User-Level Skill
-
-Install as a user-level subagent in `~/.claude/agents/`.
-
-**Pros:**
-- Survives plugin updates
-- User-controlled
-
-**Cons:**
-- Different invocation pattern
-- Less integrated with `/start:*` workflow
+```
+/start:specify "Feature description"
+       |
+       v
+docs/specs/NNN-feature/
+       |
+       v
+/start:export-to-ralph (or: ralph-export NNN)
+       |
+       +-- Copy PRD/SDD/PLAN -> specs/new-features/
+       +-- Transform PLAN -> @fix_plan.md
+       +-- Update PROMPT.md "Current Focus"
+       +-- Delete docs/specs/NNN-*/
+       |
+       v
+ralph start
+       |
+       v
+finalize-ralph.sh
+       +-- Archive @fix_plan.md
+       +-- Reset specs/new-features/
+       +-- Ready for next cycle
+```
 
 ## Requirements
 
@@ -297,6 +324,7 @@ Install as a user-level subagent in `~/.claude/agents/`.
 - Claude Code CLI
 - the-startup plugin (for `/start:specify`)
 - Ralph Claude Code (for autonomous execution)
+- **Existing Ralph project structure**
 
 ## Documentation
 
